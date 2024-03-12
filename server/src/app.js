@@ -15,4 +15,9 @@ app.use(
 app.use(express.json({ limit: "16kb" }));
 app.use(cookieParser());
 
+// routes
+import dashboardRoutes from "./routes/dashboard.route.js";
+
+app.use("/api/v1/dashboard", dashboardRoutes);
+
 export { app };
