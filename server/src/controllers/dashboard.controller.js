@@ -130,4 +130,232 @@ const relevanceByRegion = asyncHandler(async (req, res) => {
   }
 });
 
-export { getAllData, intensityBySector, likelihoodByTopic, relevanceByRegion };
+const intensityTrendByTime = asyncHandler(async (req, res) => {
+  try {
+    const intensityTrend = await Data.aggregate([
+      // match the data which has added or published date
+      {
+        $match: {
+          $or: [{ added: { $exists: true }, published: { $exists: true } }],
+        },
+      },
+      // project the date (may be added or published date) and intensity
+      {
+        $project: {
+          date: { $ifNull: ["$added", "$published"] },
+          intensity: 1,
+          _id: 0,
+        },
+      },
+      // overwrite the date field with date object of previous pipeline result have date
+      {
+        $addFields: {
+          date: {
+            // convert string to date object
+            $dateFromString: {
+              dateString: "$date",
+              format: "%B, %d %Y %H:%M:%S",
+            },
+          },
+        },
+      },
+      {
+        // group the data by date and calculate the average intensity
+        $group: {
+          _id: "$date",
+          avgIntensity: { $avg: "$intensity" },
+        },
+      },
+      {
+        // sort the data by date
+        $sort: { _id: 1 },
+      },
+      {
+        // project only desired fields and format the date
+        $project: {
+          date: {
+            // convert date object to string
+            $dateToString: {
+              format: "%B, %d %Y %H:%M:%S",
+              date: "$_id",
+            },
+          },
+          avgIntensity: 1,
+        },
+      },
+    ]);
+
+    if (intensityTrend.length === 0) {
+      return res.status(404).json(new ApiResponse(404, null, "No data found"));
+    }
+
+    // Handel null cases
+    const formattedData = intensityTrend.filter(
+      (data) => data._id !== null && data.avgIntensity !== null
+    );
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, formattedData, "Data retrieved successfully"));
+  } catch (error) {
+    console.log("Error while getting intensityTrend : ", error);
+    throw new ApiError(500, "Something went wrong in intensityTrend", error);
+  }
+});
+
+// top-countries-insights
+const topCountryByInsights = asyncHandler(async (req, res) => {
+  try {
+    const topCountry = await Data.aggregate([
+      {
+        $group: {
+          _id: "$country",
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: { count: -1 },
+      },
+      {
+        $limit: 5,
+      },
+      {
+        $project: {
+          country: "$_id",
+          count: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    if (topCountry.length === 0) {
+      return res.status(404).json(new ApiResponse(404, null, "No data found"));
+    }
+
+    //handel  null or empty country name
+    const formattedData = topCountry.filter(
+      (data) => data.country !== null && data.country !== ""
+    );
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, formattedData, "Data retrieved successfully"));
+  } catch (error) {
+    console.log("Error while getting topCountry : ", error);
+    throw new ApiError(500, "Something went wrong in topCountry", error);
+  }
+});
+
+// impact on world by pre sector
+const impactOnWorldBySector = asyncHandler(async (req, res) => {
+  try {
+    const impactOnWorld = await Data.aggregate([
+      {
+        $group: {
+          _id: "$sector",
+          totalImpact: {
+            $sum: "$impact",
+          },
+        },
+      },
+    ]);
+
+    if (impactOnWorld.length === 0) {
+      return res.status(404).json(new ApiResponse(404, null, "No data found"));
+    }
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, impactOnWorld, "Data retrieved successfully"));
+  } catch (error) {
+    console.log("Error while getting impactOnWorldBySector : ", error);
+    throw new ApiError(500, "Something went wrong in impactOnWorldBySector");
+  }
+});
+
+// source-distribution-by-sector
+const sourceDistributionBySector = asyncHandler(async (req, res) => {
+  try {
+    const sourceDistribution = await Data.aggregate([
+      {
+        $group: {
+          _id: { sector: "$sector", source: "$source" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.sector",
+          sources: { $push: { source: "$_id.source", count: "$count" } },
+        },
+      },
+    ]);
+
+    if (sourceDistribution.length === 0) {
+      return res.status(404).json(new ApiResponse(404, null, "No data found"));
+    }
+
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, sourceDistribution, "Data retrieved successfully")
+      );
+  } catch (error) {
+    console.log("Error while getting sourceDistribution : ", error);
+    throw new ApiError(500, "Something went wrong in sourceDistribution");
+  }
+});
+
+// top sector pre country
+const topSectorPerCountry = asyncHandler(async (req, res) => {
+  try {
+    const topSector = await Data.aggregate([
+      {
+        $group: {
+          _id: { country: "$country", sector: "$sector" },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: {
+          "_id.country": 1,
+          count: -1,
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.country",
+          sector: { $first: "$_id.sector" },
+        },
+      },
+    ]);
+
+    if (topSector.length === 0) {
+      return res.status(404).json(new ApiResponse(404, null, "No data found"));
+    }
+
+    // Handel null and empty case
+    const formattedData = topSector.filter(
+      (d) => d.sector !== "" && d["_id"] !== ""
+    );
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, formattedData, "Data retrieved successfully"));
+  } catch (error) {
+    console.log("Error while getting topSectorPerCountry : ", error);
+    throw new ApiError(500, "Something went wrong in topSectorPerCountry");
+  }
+});
+
+export {
+  getAllData,
+  intensityBySector,
+  likelihoodByTopic,
+  relevanceByRegion,
+  intensityTrendByTime,
+  topCountryByInsights,
+  impactOnWorldBySector,
+  sourceDistributionBySector,
+  topSectorPerCountry,
+};
